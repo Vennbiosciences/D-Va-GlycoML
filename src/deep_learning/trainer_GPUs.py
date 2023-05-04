@@ -1,0 +1,216 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+################################################################################
+This script create trainer based on Pytorch.
+
+Created on 4 April 2022.
+################################################################################
+"""
+__author__ = 'ZLiang'
+
+import torch as t
+from torch import nn
+from torch.autograd import Variable
+from torch.optim import Adam
+from copy import deepcopy
+import numpy as np
+from sklearn.metrics import r2_score
+from models import CELoss
+from torch.utils.data import Dataset, DataLoader
+import os
+
+
+class BatchSpectraDataset(Dataset):
+    """ Dataset object for the data loading """
+
+    def __init__(self, data_batches):
+        """
+        data_batches: list
+            list of minibatches
+        """
+        batch_lengths = []
+        for batch in data_batches:
+            # All elements in a batch should have same size in batch_size dimension
+            #assert len({item.shape[1] for item in batch}) == 1
+            batch_lengths.append(batch[0].shape[1])
+        # All batches should have same batch size
+        assert len(set(batch_lengths)) == 1
+        self.batch_size = batch_lengths[0]
+        self.batches = data_batches
+        self.length = len(data_batches)
+        self.n_items = len(self.batches[0])
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, index):
+        if index >= self.length:
+            raise IndexError
+        out_batch = []
+        # items are X, X_meta, and y.
+        for item in self.batches[index]:
+            out_item = Variable(t.as_tensor(np.array(item).astype(np.float32)))
+            out_batch.append(out_item)
+            #out_batch.extend(out_item)
+
+        return out_batch
+
+
+class Trainer_GPUs(object):
+    """ Default trainer for the network """
+    def __init__(self,
+                 net,
+                 opt,
+                 criterion=CELoss,
+                 featurize=True):
+        """
+        net: callable pytorch function/module
+            network to be trained
+        opt: Config class
+            configuration of training parameters
+        criterion: callable pytorch function/module, optional
+            loss function
+        featurize: bool, optional
+            if to featurize (discretize) inputs
+        """
+        self.net = net
+        self.opt = opt
+        self.criterion = criterion
+        if self.opt.gpu:
+            self.net = self.net.cuda()
+
+    def assemble_batch(self, data, batch_size=None, sort=True):
+        """ Assemble data into batches
+
+        data: list
+            list of standard input structure (X, y, profile, name)
+        sample_weights: list, optional
+            list of float, assigning training weights to samples
+        batch_size: None or int, optional
+            specify batch size if given
+        sort: bool, optional
+            if to reorder samples in the data to ease training
+        """
+        if batch_size is None:
+            batch_size = self.opt.batch_size
+
+        # Sort by length
+        if sort:
+            lengths = [x[0].shape[0] for x in data]
+            order = np.argsort(lengths)
+            data = [data[i] for i in order]
+
+        # Assemble samples with similar lengths to a batch
+        data_batches = []
+        for i in range(int(np.ceil(len(data) / float(batch_size)))):
+            batch = data[i * batch_size:min((i + 1) * batch_size, len(data))]
+            batch_length = max(sample[0].shape[0] for sample in batch)
+            out_batch_X = []
+            out_batch_X_metas = []
+            out_batch_y = []
+            for sample in batch:
+                sample_length = sample[0].shape[0]
+                X = deepcopy(sample[0][:])
+                y = deepcopy(sample[2][:])
+                out_batch_X.append(np.pad(X, ((0, batch_length - sample_length), (0, 0)), 'constant'))
+                out_batch_X_metas.append(sample[1])
+                out_batch_y.append(np.pad(y, ((0, batch_length - sample_length), (0, 0)), 'constant'))
+                #assert X.shape[0] - y.shape[0] == 1
+                # Consider glycopeptide for M ions.
+                #assert X.shape[0] - y.shape[0] == 0
+
+            if len(batch) < batch_size:
+                pad_length = batch_size - len(batch)
+                out_batch_X.extend([out_batch_X[0]] * pad_length)
+                out_batch_X_metas.extend([out_batch_X_metas[0]] * pad_length)
+                out_batch_y.extend([out_batch_y[0]] * pad_length)
+
+            data_batches.append((np.stack(out_batch_X, axis=1),
+                                 np.stack(out_batch_X_metas, axis=0),
+                                 np.stack(out_batch_y, axis=1)))
+        return data_batches
+
+    def save(self, path):
+        t.save(self.net.state_dict(), path)
+
+    def load(self, path):
+        s_dict = t.load(path, map_location=lambda storage, loc: storage)
+        self.net.load_state_dict(s_dict)
+
+    def train(self, train_data, n_epochs=None, **kwargs):
+        self.run_model(train_data, train=True, n_epochs=n_epochs, **kwargs)
+        return
+
+    def display_loss(self, train_data, **kwargs):
+        self.run_model(train_data, train=False, n_epochs=1, **kwargs)
+        return
+
+    def run_model(self, data, train=False, n_epochs=None, **kwargs):
+        """ Train/calculate total loss
+
+        data: list
+            list of standard input structure (X, y, profile, name)
+        train: bool, optional
+            if in train mode
+        n_epochs: None or int, optional
+            specify number of epochs if given
+        """
+        if train:
+            optimizer = Adam(self.net.parameters(),
+                             lr=self.opt.lr,
+                             betas=(.9, .999))
+            self.net.zero_grad()
+            epochs = self.opt.max_epoch
+        else:
+            epochs = 1
+        if n_epochs is not None:
+            epochs = n_epochs
+        n_points = len(data)
+
+        data_batches = self.assemble_batch(data)
+        dataset = BatchSpectraDataset(data_batches)
+        data_loader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
+
+        for epoch in range(epochs):
+            np.random.shuffle(data_batches)
+            loss = 0
+            print('start epoch {epoch}'.format(epoch=epoch))
+            for batch in data_loader:
+                # Should squeeze the dimension for 0
+                X = Variable(t.squeeze(t.as_tensor(np.array(batch[0]).astype(np.float32)), 0))
+                X_metas = Variable(t.squeeze(t.as_tensor(np.array(batch[1]).astype(np.float32)), 0))
+                y = Variable(t.squeeze(t.as_tensor(np.array(batch[2]).astype(np.float32)), 0))
+                if self.opt.gpu:
+                    X = X.cuda()
+                    X_metas = X_metas.cuda()
+                    y = y.cuda()
+                output = self.net(X, X_metas, self.opt.batch_size)
+                error = self.criterion(y, output, self.opt.batch_size)
+                loss += error
+                error.backward()
+                if train:
+                    optimizer.step()
+                    self.net.zero_grad()
+            #print('epoch {epoch} loss: {loss}'.format(epoch=epoch, loss=loss.data[0] / n_points))
+            print('epoch {epoch} loss: {loss}'.format(epoch=epoch, loss=loss.data / n_points))
+
+    def predict(self, test_data):
+        """ Generate predictions
+
+        test_data: list
+            list of standard input structure (X, y, profile, name)
+        """
+        test_batches = self.assemble_batch(test_data, batch_size=1, sort=False)
+        preds = []
+        for sample in test_batches:
+            X = Variable(t.from_numpy(sample[0])).float()
+            X_metas = Variable(t.from_numpy(sample[1])).float()
+            y = Variable(t.from_numpy(sample[2])).float()
+            if self.opt.gpu:
+                X = X.cuda()
+                X_metas = X_metas.cuda()
+                y = y.cuda()
+            preds.append(self.net.predict(X, X_metas, 1, self.opt.gpu))
+        return preds
