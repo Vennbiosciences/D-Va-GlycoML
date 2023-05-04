@@ -48,9 +48,9 @@ port install git-lfs          # macOS with MacPorts
 
 Python dependencies are managed by `pipenv`.  Install dependencies and enter the virtual environment as follows
 ```
-pip install --user pipenv
-pipenv sync
-pipenv shell
+python -m pip install --user pipenv
+python -m pipenv sync
+python -m pipenv shell
 ```
 
 ## Contributors:
