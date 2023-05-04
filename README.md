@@ -37,7 +37,22 @@ This deep neural network can predict both peptide and glycan fragmentation patte
   * de_novo_sequencing: determine the intact glycopeptide structure without using glycan database
   * parse_msp_data: read msp files, and use deno sequecning, then generate the csv file for the deep learning model
   * stack_queue: basic data structure for analyzing the glycans
-  
+
+## Installation and development
+This project uses Git Large File Storage (`git-lfs`) for versioning of the larger Pytorch `*.pth` files.  To gain access, you will need to install `git-lfs` on your system as follows:
+```
+sudo apt-get install git-lfs  # Ubuntu/Debian Linux
+brew install git-lfs          # macOS with Homebrew
+port install git-lfs          # macOS with MacPorts
+```
+
+Python dependencies are managed by `pipenv`.  Install dependencies and enter the virtual environment as follows
+```
+python -m pip install --user pipenv
+python -m pipenv sync
+python -m pipenv shell
+```
+
 ## Contributors:
 
 * Zhewei Liang (zliang@venn.bio)
