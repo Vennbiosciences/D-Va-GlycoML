@@ -46,11 +46,11 @@ brew install git-lfs          # macOS with Homebrew
 port install git-lfs          # macOS with MacPorts
 ```
 
-Python dependencies are managed by `pipenv`.  Install dependencies and enter the virtual environment as follows
+Python dependencies are managed by `poetry`.  Install dependencies and enter the virtual environment as follows
 ```
-python -m pip install --user pipenv
-python -m pipenv sync
-python -m pipenv shell
+python -m pip install --user poetry
+python -m poetry install
+python -m poetry shell
 ```
 
 ## Spectral library building scripts (in order of operation):
