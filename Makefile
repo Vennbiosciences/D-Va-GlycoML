@@ -16,10 +16,8 @@ docker:
 
 .PHONY: run
 run:
-	rm -rf data/$(MODEL)
+	sudo rm -rf data/$(MODEL)
 	docker run --rm -it \
-		--runtime=nvidia \
-		--gpus all \
 		--volume $(PWD)/data/:/data/ \
 		$(IMAGE) \
 		/data/$(TRAIN) \
