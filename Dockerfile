@@ -12,13 +12,13 @@ RUN : \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# install pipenv
+# install poetry
 RUN pip install poetry
 
-# install pipenv dependencies
+# install poetry dependencies
 WORKDIR /app
 ADD poetry.lock* pyproject.toml ./
-RUN poetry install
+RUN poetry install --no-root
 
 ADD run_train_test.sh ./
 ADD ./src ./src
