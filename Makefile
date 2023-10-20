@@ -1,4 +1,4 @@
-ARTIFACT ?= artifactory.sfo.venn.bio/docker/venn/d-va
+ARTIFACT ?= docker/venn/d-va
 TAG ?= latest
 IMAGE ?= $(ARTIFACT):$(TAG)
 
