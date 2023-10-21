@@ -13,7 +13,7 @@ RUN : \
     && rm -rf /var/lib/apt/lists/*
 
 # install poetry
-RUN pip install poetry
+RUN pip install --no-cache poetry
 
 # install poetry dependencies
 WORKDIR /app
