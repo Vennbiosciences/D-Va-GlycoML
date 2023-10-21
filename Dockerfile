@@ -1,11 +1,24 @@
-FROM artifactory.sfo.venn.bio/docker/library/python:3.8-slim-buster
+FROM nvidia/cuda:11.7.1-base-ubuntu22.04
 
-RUN python -m pip install pipenv
+# install Python 3.10 and pip
+RUN : \
+    && apt-get update \
+    && apt-get install -y \
+         python3.10-dev \
+         python3-pip \
+    && ln -s /usr/bin/python3.10 /usr/local/bin/python \
+    && pip install --no-cache --upgrade \
+         pip \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
+# install poetry
+RUN pip install --no-cache poetry
+
+# install poetry dependencies
 WORKDIR /app
-ADD Pipfile* ./
-
-RUN pipenv install --dev --system --deploy
+ADD poetry.lock* pyproject.toml ./
+RUN poetry install --no-root
 
 ADD run_train_test.sh ./
 ADD ./src ./src
